@@ -1,0 +1,161 @@
+using System;
+using System.Collections.Generic;
+using Microsoft.EntityFrameworkCore;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using BugBounty.Models;
+using BugBounty.Services.ReportService;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
+using System.Reflection.Metadata.Ecma335;
+using Microsoft.AspNetCore.Http;
+using System.Net;
+using BugBounty.ViewModels.ReportViewModels;
+using BugBounty.ViewModels.AccountViewModels;
+
+namespace BugBounty.Controllers
+{
+    /// <summary>
+    /// Контроллер, предназначенный для работы с отчетами
+    /// </summary>
+    public class ReportController : Controller
+    {
+        private readonly IReportService _reportService;
+        private readonly IWebHostEnvironment _webHostEnvironment;
+
+        /// <summary>
+        /// Инициализирует новый экземпляр <see cref="ReportController"/>  класса с параметрами  <see cref="BugsBountyDBContext"/>, <see cref="IReportService"/> и <see cref="IWebHostEnvironment"/>
+        /// </summary>
+        /// <param name="reportService">A <see cref="IReportService"/>.</param>
+        /// <param name="webHostEnvironment">A <see cref="IWebHostEnvironment"/>.</param>
+        public ReportController(IReportService reportService, IWebHostEnvironment webHostEnvironment)
+        {
+            _reportService = reportService;
+            _webHostEnvironment = webHostEnvironment;
+        }
+
+        /// <summary>
+        /// Скачивание образца отчета
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet]
+        [Authorize(Roles = "EXPERT")]
+        public async Task<IActionResult> DownloadReport()
+        {
+            var report = await _reportService.GetReport(1);
+
+            var path = Path.Combine(_webHostEnvironment.WebRootPath, report.ReportPath);
+
+            return File(new FileStream(path, FileMode.Open, FileAccess.Read), "application/*", Path.GetFileName(path));
+        }
+
+        /// <summary>
+        /// GET:// Загрузка отчета на Платформу
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet]
+        [Authorize(Roles = "EXPERT")]
+        public IActionResult UploadReport() => View();
+
+        /// <summary>
+        /// POST:// Загрузка отчета на Платформу
+        /// </summary>
+        /// <param name="files">Список скриншотов с выявленными уязвимостями</param>
+        /// <param name="reportFile">Файл отчета</param>
+        /// <param name="orderId">Идентификатор заказа</param>
+        /// <returns></returns>
+        [HttpPost]
+        [Authorize(Roles = "EXPERT")]
+        public async Task<IActionResult> UploadReport(UploadReportModel model)
+        {
+            await _reportService.CreateReportAsync(model);
+
+            ViewBag.Message = "Отлшен!";
+            ViewBag.Status = true;
+            
+            return View();
+        }
+
+        /// <summary>
+        /// Список отчетов клиента
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet]
+        [Authorize(Roles = "CLIENT")]
+        public async Task<IActionResult> Reports()
+        {
+            var reports = await _reportService.ClientReportsAsync();
+            return View(reports);
+        }
+
+        /// <summary>
+        /// Скачивание отчета по выполненному заказу
+        /// </summary>
+        /// <param name="id">Идентификатор заказа</param>
+        /// <returns></returns>
+        [HttpPost]
+        [Authorize(Roles = "CLIENT,ADMINISTRATOR")]
+        public async Task<IActionResult> DownloadReport(int id)
+        {
+            var report = await _reportService.GetReport(id);
+
+            if (report != null)
+            {
+                var path = Path.Combine(_webHostEnvironment.WebRootPath, report.ReportPath);
+                return File(new FileStream(path, FileMode.Open, FileAccess.Read), "application/*", Path.GetFileName(path));
+            }
+            else
+            {
+                throw new Exception();
+            }
+        }
+
+        /// <summary>
+        /// Модерация отчета заказчиком
+        /// </summary>
+        /// <param name="reportId">Идентификатор отчета</param>
+        /// <param name="status">Статус модерации, true - отчет одобрен, false - отчет отклонен</param>
+        /// <param name="comment">Строка, содержащая замечания заказчика относительно отчета, в случае, если отчет отклонен</param>
+        /// <returns></returns>
+        [HttpPost]
+        [Authorize(Roles = "CLIENT")]
+        public async Task<IActionResult> ReportModeration(ReportModerationModel model)
+        {
+            await _reportService.ReportApprovalAsync(model);
+
+            if (model.Status)
+            {
+                ViewBag.Message = "Вами ет. " +
+                                  "Обраежат. " +
+                                  "Дальатформы. " +
+                                  "С еации";
+                ViewBag.Status = true;
+            }
+            else
+            {
+                ViewBag.Message = "По ппроцедура спора. " +
+                                  "Адмишениик нему). " +
+                                  "Решение не подлежит. " +
+                                  "При  Исполнителей. " +
+                                  "При утации";
+                ViewBag.Status = false;
+            }
+            return View();
+        }
+
+        /// <summary>
+        /// Список отчетов, по которым возник спор
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet]
+        [Authorize(Roles = "ADMINISTRATOR")]
+        public async Task<IActionResult> DisputeReports()
+        {
+            var reports = await _reportService.GetDisputeReportsAsync();
+            return View(reports);
+        }
+        
+    }
+}
